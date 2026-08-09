@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saihm-langgraph"
+version = "0.1.0"
+description = "Long-term memory for LangGraph your users own — a drop-in BaseStore, portable across every model, sealed client-side, and provably erasable (GDPR Art. 17)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SAIHM" }]
+keywords = ["langgraph", "langchain", "agent-memory", "mcp", "saihm", "encryption", "gdpr", "memory"]
+dependencies = [
+    "mcp>=1.5,<3",       # drives the bundled Node MCP sidecar over stdio (verified on 1.x and 2.0)
+    "langgraph>=1.2,<2", # SaihmStore implements langgraph.store.base.BaseStore
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://saihm.coti.global"
+Documentation = "https://saihm.coti.global"
+Source = "https://github.com/SAIHM-Admin/saihm-langgraph"
+Demos = "https://citw2.github.io/saihm-demos/"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# The Node sidecar ships as package data (no node_modules — provisioned into a user cache on
+# first use; see saihm_memory/_bootstrap.py).
+saihm_memory = [
+    "_sidecar/server.mjs",
+    "_sidecar/sandbox.mjs",
+    "_sidecar/package.json",
+    "_sidecar/package-lock.json",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

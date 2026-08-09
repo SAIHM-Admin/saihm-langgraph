@@ -1,0 +1,15 @@
+# Controls the sdist only (the wheel's contents come from [tool.setuptools] in pyproject.toml).
+#
+# Why this file exists: setuptools' legacy defaults sweep in `test*.py` but NOT `conftest.py`,
+# so without it the sdist shipped test_basestore_parity.py with its fixtures missing and every
+# test errored at collection. Be explicit instead of relying on those defaults.
+include LICENSE
+include README.md
+recursive-include tests *.py
+
+# Sidecar sources must reach the sdist too, so `pip install <sdist>` can build a usable wheel.
+recursive-include src/saihm_memory/_sidecar server.mjs sandbox.mjs package.json package-lock.json
+
+# Internal handoff note — never ships and never reaches the public repo.
+exclude STAGING.md
+prune .github
