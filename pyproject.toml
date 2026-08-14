@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "saihm-langgraph"
-version = "0.1.0"
+version = "0.1.1"
 description = "Long-term memory for LangGraph your users own — a drop-in BaseStore, portable across every model, sealed client-side, and provably erasable (GDPR Art. 17)."
 readme = "README.md"
 requires-python = ">=3.10"

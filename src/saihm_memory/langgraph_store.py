@@ -37,9 +37,10 @@ from langgraph.store.base import (
     SearchItem,
     SearchOp,
 )
-# Reused for exact parity with LangGraph's reference InMemoryStore (pinned langgraph>=1.2,<2):
-# JSONB-style filter comparison (incl. $-operators) and namespace match-condition matching.
-from langgraph.store.memory import _compare_values, _does_match
+# Exact parity with LangGraph's reference InMemoryStore: JSONB-style filter comparison (incl.
+# $-operators) and namespace match-condition matching. Bound to LangGraph's own private helpers
+# when importable, else to a vendored copy — see _lg_filter for why that fallback exists.
+from ._lg_filter import compare_values as _compare_values, does_match as _does_match
 
 from .client import SaihmMemoryClient
 

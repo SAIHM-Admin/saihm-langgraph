@@ -5,6 +5,8 @@
 # test errored at collection. Be explicit instead of relying on those defaults.
 include LICENSE
 include README.md
+include CHANGELOG.md
+include THIRD-PARTY-NOTICES.md
 recursive-include tests *.py
 
 # Sidecar sources must reach the sdist too, so `pip install <sdist>` can build a usable wheel.
