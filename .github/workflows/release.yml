@@ -1,0 +1,91 @@
+name: release
+
+# Publishing to PyPI is irreversible: a version number, once uploaded, can never be
+# reused even if the file is deleted. Everything before the publish job exists to make
+# sure the thing being uploaded is the thing that was reviewed.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Node is required at runtime: the bundled sidecar seals every cell client-side,
+      # so the clean-room run below cannot pass without it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Tag must match the packaged version
+        # The tag names the release a human clicked; pyproject.toml names what PyPI will
+        # serve forever. A silent disagreement between them is the one mistake that
+        # cannot be taken back, so it is checked before anything is built.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          printf 'tag=%s pyproject=%s\n' "$tag" "$pkg"
+          [ "$tag" = "$pkg" ] || { echo "::error::release tag and pyproject.toml version disagree"; exit 1; }
+
+      - name: Version must not already exist on PyPI
+        # gh-action-pypi-publish would fail on a duplicate anyway, but it fails after the
+        # build and inside the job that holds the publishing token. Failing here keeps the
+        # rejection away from the step that can write.
+        run: |
+          name="$(python -c 'import tomllib,pathlib;print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["name"])')"
+          ver="${GITHUB_REF_NAME#v}"
+          code="$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/$name/$ver/json")"
+          [ "$code" = "404" ] || { echo "::error::$name $ver already exists on PyPI (HTTP $code)"; exit 1; }
+
+      - name: Build sdist and wheel
+        run: python -m pip install --upgrade pip build twine && python -m build
+
+      - name: Check the artifacts render on PyPI
+        run: python -m twine check --strict dist/*
+
+      - name: Clean-room install and test
+        # Install the built wheel into an empty environment and test that, not the working
+        # tree. A src layout means the tests import the installed package, so this run
+        # exercises exactly what a user will get.
+        run: |
+          python -m venv /tmp/cleanroom
+          /tmp/cleanroom/bin/python -m pip install --upgrade pip
+          /tmp/cleanroom/bin/python -m pip install "$(ls dist/*.whl)[dev]"
+          /tmp/cleanroom/bin/python -m pytest -q
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Named so a required reviewer can be attached to the irreversible step without
+    # touching this file. PyPI's trusted publisher must name the same environment.
+    environment: pypi
+    permissions:
+      # A job-level block replaces the top-level one, so read access is restated here
+      # rather than inherited.
+      contents: read
+      # The only job that mints an identity token, and it mints nothing else.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Trusted publishing: the token is exchanged for a short-lived PyPI credential
+      # scoped to this repository and workflow. No API token is stored anywhere.
+      - uses: pypa/gh-action-pypi-publish@release/v1
