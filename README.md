@@ -2,6 +2,10 @@
 
 **SAIHM long-term memory for LangGraph — a `BaseStore` your graph owns. Portable, encrypted, provably erasable.**
 
+<a href="https://saihm.net/overview"><img src="https://saihm.net/media/saihm-short-overview-play.jpg" alt="Watch: SAIHM in 6 minutes" width="480"></a>
+
+**New to SAIHM?** [Watch the 6-minute overview](https://saihm.net/overview) (captions and transcript), or [read the SAIHM manual (PDF)](https://saihm.net/manual).
+
 `SaihmStore` is a drop-in [`langgraph.store.base.BaseStore`](https://langchain-ai.github.io/langgraph/) — the interface LangGraph uses for long-term, cross-thread memory. Compile a graph with it and that graph gets memory the user actually owns: portable across models *and* frameworks, non-custodial (sealed client-side; Python never holds a key), and **provably erasable** (GDPR Art. 17 — `delete` crypto-shreds the cell, it does not merely hide it).
 
 ```bash
