@@ -80,9 +80,9 @@ A cell written outside this adapter (e.g. by the LangChain, CrewAI, or AutoGen S
 
 ## Related
 
-- **Try it in your browser (offline, no signup):** <https://citw2.github.io/saihm-demos/>
-- **Runnable end-to-end demo:** <https://github.com/citw2/saihm-langgraph>
-- **Other adapters:** [LangChain/LlamaIndex](https://github.com/citw2/saihm-langchain) · [CrewAI](https://github.com/citw2/saihm-crewai) · [AutoGen](https://github.com/citw2/saihm-autogen)
+- **Try it in your browser (offline, no signup):** <https://saihm-admin.github.io/saihm-demos/>
+- **Runnable end-to-end demo:** <https://github.com/SAIHM-Admin/saihm-langgraph-demo>
+- **Other adapters:** [LangChain/LlamaIndex](https://github.com/SAIHM-Admin/saihm-langchain) · [CrewAI](https://github.com/SAIHM-Admin/saihm-crewai-demo) · [AutoGen](https://github.com/SAIHM-Admin/saihm-autogen)
 - **What SAIHM is:** <https://saihm.coti.global>
 
 ## License
