@@ -27,16 +27,32 @@ jobs:
 
       - name: Check metadata and contents
         # This package forwards to saihm-adapters and ships no code. Check that the built
-        # files say so, depend on saihm-adapters, and carry no retired links.
+        # files say so, depend on saihm-adapters, and link only to the hosts listed here.
         run: |
           python - <<'PY'
           import pathlib, re, sys, tarfile, zipfile
+          from urllib.parse import urlsplit
+          ALLOWED = {
+              "saihm.net": "/",
+              "saihm-admin.github.io": "/",
+              "github.com": "/SAIHM-Admin/",
+              "pypi.org": "/",
+              "www.apache.org": "/licenses/",
+          }
           dist = sorted(pathlib.Path("dist").iterdir())
           wheels = [p for p in dist if p.suffix == ".whl"]
           sdists = [p for p in dist if p.name.endswith(".tar.gz")]
           assert len(wheels) == 1 and len(sdists) == 1, dist
-          retired = re.compile(rb"coti\.global|citw2", re.I)
+          url = re.compile(rb"https?://[^\s<>\"')\]`]+")
           errors = []
+
+          def check_links(where, data):
+              for raw in url.findall(data):
+                  u = urlsplit(raw.decode("utf-8", "replace").rstrip(".,;:"))
+                  prefix = ALLOWED.get(u.hostname or "")
+                  if prefix is None or not (u.path or "/").startswith(prefix):
+                      errors.append(f"link outside the allowlist in {where}: {u.geturl()}")
+
           with zipfile.ZipFile(wheels[0]) as z:
               names = z.namelist()
               code = [n for n in names if ".dist-info/" not in n]
@@ -45,11 +61,12 @@ jobs:
               meta = next(z.read(n) for n in names if n.endswith(".dist-info/METADATA"))
               if not re.search(rb"^Requires-Dist: saihm-adapters\[", meta, re.M):
                   errors.append("wheel METADATA does not require saihm-adapters")
-              errors += [f"retired link in wheel {n}" for n in names if retired.search(z.read(n))]
+              for n in names:
+                  check_links(f"wheel {n}", z.read(n))
           with tarfile.open(sdists[0]) as t:
               for m in t.getmembers():
-                  if m.isfile() and retired.search(t.extractfile(m).read()):
-                      errors.append(f"retired link in sdist {m.name}")
+                  if m.isfile():
+                      check_links(f"sdist {m.name}", t.extractfile(m).read())
           print("\n".join(errors) or "ok: forwarder metadata and contents")
           sys.exit(1 if errors else 0)
           PY
