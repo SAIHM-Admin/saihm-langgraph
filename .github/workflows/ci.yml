@@ -10,28 +10,46 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
-      # Node is required at runtime: the bundled sidecar seals every cell client-side.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
-      - name: Install package + test deps
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Build sdist and wheel
+        run: python -m pip install --upgrade pip build twine && python -m build
 
-      - name: Run tests
-        # First test provisions the sidecar (npm ci) into the cache, then runs against the
-        # offline blind sandbox — no account, no live endpoint.
-        run: python -m pytest -q
+      - name: Check the artifacts render on PyPI
+        run: python -m twine check --strict dist/*
+
+      - name: Check metadata and contents
+        # This package forwards to saihm-adapters and ships no code. Check that the built
+        # files say so, depend on saihm-adapters, and carry no retired links.
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys, tarfile, zipfile
+          dist = sorted(pathlib.Path("dist").iterdir())
+          wheels = [p for p in dist if p.suffix == ".whl"]
+          sdists = [p for p in dist if p.name.endswith(".tar.gz")]
+          assert len(wheels) == 1 and len(sdists) == 1, dist
+          retired = re.compile(rb"coti\.global|citw2", re.I)
+          errors = []
+          with zipfile.ZipFile(wheels[0]) as z:
+              names = z.namelist()
+              code = [n for n in names if ".dist-info/" not in n]
+              if code:
+                  errors.append(f"wheel ships files outside dist-info: {code}")
+              meta = next(z.read(n) for n in names if n.endswith(".dist-info/METADATA"))
+              if not re.search(rb"^Requires-Dist: saihm-adapters\[", meta, re.M):
+                  errors.append("wheel METADATA does not require saihm-adapters")
+              errors += [f"retired link in wheel {n}" for n in names if retired.search(z.read(n))]
+          with tarfile.open(sdists[0]) as t:
+              for m in t.getmembers():
+                  if m.isfile() and retired.search(t.extractfile(m).read()):
+                      errors.append(f"retired link in sdist {m.name}")
+          print("\n".join(errors) or "ok: forwarder metadata and contents")
+          sys.exit(1 if errors else 0)
+          PY
