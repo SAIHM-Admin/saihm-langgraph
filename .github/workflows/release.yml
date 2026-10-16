@@ -53,16 +53,33 @@ jobs:
           python - <<'PY'
           import pathlib, re, sys, tarfile, zipfile
           from urllib.parse import urlsplit
+          # A path is allowed when it equals an entry or continues it after a "/", so lookalikes
+          # such as x.com/SAIHMemoryFake fail ("" admits the whole host).
           ALLOWED = {
-              "saihm.net": "/",
-              "saihm-admin.github.io": "/",
-              "github.com": ("/SAIHM-Admin/", "/sponsors/SAIHM-Admin"),
-              "img.shields.io": ("/pypi/", "/badge/"),
-              "x.com": "/SAIHMemory",
-              "www.youtube.com": "/@SAIHM-Memory",
-              "pypi.org": "/",
-              "www.apache.org": "/licenses/",
+              "saihm.net": ("",),
+              "saihm-admin.github.io": ("",),
+              "github.com": ("/SAIHM-Admin", "/sponsors/SAIHM-Admin"),
+              "img.shields.io": ("/pypi", "/badge"),
+              "x.com": ("/SAIHMemory",),
+              "www.youtube.com": ("/@SAIHM-Memory",),
+              "pypi.org": ("",),
+              "www.apache.org": ("/licenses",),
           }
+
+          def allowed(u):
+              path = u.path or "/"
+              return any(path == p or path.startswith(p + "/") for p in ALLOWED.get(u.hostname or "", ()))
+
+          # Negative and positive controls: the check must reject lookalikes and admit the real links.
+          for bad in ("https://x.com/SAIHMemoryFake", "https://x.com/elonmusk",
+                      "https://github.com/sponsors/SAIHM-AdminX", "https://github.com/sponsors/SAIHM-Admin-evil",
+                      "https://github.com/SAIHM-AdminX/repo", "https://www.youtube.com/@SAIHM-Memory-Fake",
+                      "https://img.shields.io/pypifake/x", "https://saihm.net.example.com/"):
+              assert not allowed(urlsplit(bad)), f"allowlist admits a lookalike: {bad}"
+          for good in ("https://x.com/SAIHMemory", "https://github.com/sponsors/SAIHM-Admin",
+                       "https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1",
+                       "https://github.com/SAIHM-Admin/saihm-adapters", "https://img.shields.io/pypi/v/x.svg"):
+              assert allowed(urlsplit(good)), f"allowlist rejects a real link: {good}"
           dist = sorted(pathlib.Path("dist").iterdir())
           wheels = [p for p in dist if p.suffix == ".whl"]
           sdists = [p for p in dist if p.name.endswith(".tar.gz")]
@@ -73,8 +90,7 @@ jobs:
           def check_links(where, data):
               for raw in url.findall(data):
                   u = urlsplit(raw.decode("utf-8", "replace").rstrip(".,;:"))
-                  prefix = ALLOWED.get(u.hostname or "")
-                  if prefix is None or not (u.path or "/").startswith(prefix):
+                  if not allowed(u):
                       errors.append(f"link outside the allowlist in {where}: {u.geturl()}")
 
           with zipfile.ZipFile(wheels[0]) as z:
