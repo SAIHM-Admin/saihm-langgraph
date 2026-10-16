@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4
+
+- Require `saihm-adapters` 0.1.3 or later. With `mcp` 2.x installed, 0.1.2 passed a call the
+  service refused off as a success; 0.1.3 raises it. 0.1.3 also reports an unfinished
+  free-join at start-up with `SaihmNoIdentityError`, raises `SaihmStartupError` for every
+  start-up failure, and bundles sidecar dependencies with no known vulnerabilities.
+- The README follows the `@saihm/mcp-server-pro` README: start free, add SAIHM to your app,
+  what it costs (with the [pricing page](https://saihm.net/pricing)) and support. It now
+  shows a runnable LangGraph graph (`graph.compile(store=SaihmStore())`).
+- Package links add Issues and Changelog.
+
 ## 0.1.3
 
 - Require `saihm-adapters` 0.1.2 or later, which raises a clear `SaihmNoIdentityError` when
