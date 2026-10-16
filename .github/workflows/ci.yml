@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Build sdist and wheel
-        run: python -m pip install --upgrade pip build twine && python -m build
+        run: python -m pip install --upgrade pip build twine "readme-renderer[md]==46.0" && python -m build
 
       - name: Check the artifacts render on PyPI
         run: python -m twine check --strict dist/*
@@ -30,8 +30,12 @@ jobs:
         # files say so, depend on saihm-adapters, and link only to the hosts listed here.
         run: |
           python - <<'PY'
-          import pathlib, re, sys, tarfile, zipfile
-          from urllib.parse import unquote, urlsplit
+          import email, pathlib, re, sys, tarfile, zipfile
+          from html.parser import HTMLParser
+          from urllib.parse import unquote
+          # The renderer PyPI uses for a Markdown description; the build step pins its version.
+          import readme_renderer.markdown
+
           # A path is allowed when it equals an entry or continues it after a "/", so lookalikes
           # such as x.com/SAIHMemoryFake fail ("" admits the whole host).
           ALLOWED = {
@@ -44,64 +48,162 @@ jobs:
               "pypi.org": ("/project/saihm-adapters", "/project/saihm-langgraph", "/project/saihm-crewai", "/project/mcp"),
               "www.apache.org": ("/licenses",),
           }
+          # Only a link in plain form can pass: lower-case http or https, "//", a lower-case host with
+          # no user, port or trailing dot, then a path, query and fragment with no white space, control
+          # character, quote, "<", ">" or backslash. A browser reads such a link the way this check
+          # does. A relative, scheme-relative or otherwise unusual link fails, so the check never has
+          # to guess how a browser would resolve it. A heading link on the same page ("#...") passes.
+          PATH = "[A-Za-z0-9._~!$&'()*+,;=:@%/-]*"
+          REST = "[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*"
+          PLAIN = re.compile(rf"https?://([a-z0-9-]+(?:\.[a-z0-9-]+)+)(/{PATH})?(?:\?{REST})?(?:#{REST})?")
+
 
           def allowed(link):
-              # link is a URL as written in a file; a trailing ".", ",", ";" or ":" is read as
-              # punctuation. A backslash anywhere fails, also percent-encoded: a browser reads it
-              # as "/", so it can hide a dot segment or change the host.
-              if "\\" in unquote(link):
+              if re.fullmatch(r"#[A-Za-z0-9_-]+", link):
+                  return True
+              m = PLAIN.fullmatch(link)
+              if not m:
                   return False
-              url = link.rstrip(".,;:")
-              # The authority as written may hold no "@" (a browser and urlsplit can then disagree
-              # on the host).
-              if "@" in url.split("://", 1)[-1].split("/", 1)[0]:
+              host, path = m.group(1), m.group(2) or "/"
+              # No path segment may be "." or "..", or hide a "/" or "\", also percent-encoded.
+              if any(unquote(s) in (".", "..") or "/" in unquote(s) or "\\" in unquote(s) for s in path.split("/")):
                   return False
-              u = urlsplit(url)
-              path = u.path or "/"
-              # No path segment may be "..", also percent-encoded, including one at the end of
-              # the link as written (a link that ends in "/.." before the punctuation cut), and
-              # no segment may be ".".
-              if any(unquote(s) == ".." for s in urlsplit(link).path.split("/")):
-                  return False
-              if any(unquote(s) == "." for s in path.split("/")):
-                  return False
-              return any(path == p or path.startswith(p + "/") for p in ALLOWED.get(u.hostname or "", ()))
+              return any(path == p or path.startswith(p + "/") for p in ALLOWED.get(host, ()))
 
-          # Negative and positive controls: the check must reject lookalikes and admit the real links.
-          for bad in ("https://x.com/SAIHMemoryFake", "https://x.com/elonmusk",
-                      "https://github.com/sponsors/SAIHM-AdminX", "https://github.com/sponsors/SAIHM-Admin-evil",
-                      "https://github.com/SAIHM-AdminX/repo", "https://www.youtube.com/@SAIHM-Memory-Fake",
-                      "https://img.shields.io/pypifake/x", "https://saihm.net.example.com/",
-                      "https://github.com/SAIHM-Admin/../evil/repo", "https://x.com/SAIHMemory/../elonmusk",
-                      "https://www.youtube.com/@SAIHM-Memory/../@other", "https://img.shields.io/badge/../../evil",
-                      "https://x.com/SAIHMemory/%2e%2e/elonmusk", "https://evil.example\\@saihm.net/",
-                      "https://someone@saihm.net/", "https://pypi.org/project/saihm-adapterz/",
-                      "https://pypi.org/project/evil/", "https://github.com:\\attacker/SAIHM-Admin",
-                      "https://x.com/SAIHMemory/..\\elonmusk", "https://github.com/SAIHM-Admin/x\\..\\..\\evil/repo",
-                      "https://github.com/SAIHM-Admin/x%5C..%5C..%5Cevil/repo", "https://github.com/SAIHM-Admin/..",
-                      "https://github.com/SAIHM-Admin/./evil", "https://github.com/SAIHM-Admin/%2e/evil"):
-              assert not allowed(bad), f"allowlist admits a lookalike: {bad}"
+
+          class Links(HTMLParser):
+              # Every href and src in the HTML, with character references decoded as a browser does.
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.found = []
+
+              def handle_starttag(self, tag, attrs):
+                  self.found += [value or "" for name, value in attrs if name in ("href", "src")]
+
+
+          errors = []
+
+
+          def rendered_links(where, text, variant="GFM"):
+              # The links of text rendered the way PyPI renders a Markdown description.
+              html = readme_renderer.markdown.render(text, variant=variant)
+              if html is None:
+                  errors.append(f"{where} does not render as Markdown")
+                  return
+              parser = Links()
+              parser.feed(html)
+              parser.close()
+              for link in parser.found:
+                  if not allowed(link):
+                      errors.append(f"link outside the allowlist in {where}: {link!r}")
+
+
+          def metadata_links(where, data):
+              # PyPI shows the description and the URL fields of METADATA or PKG-INFO as links.
+              msg = email.message_from_string(data.decode("utf-8"))
+              urls = (msg.get_all("Home-page") or []) + (msg.get_all("Download-URL") or [])
+              urls += [v.split(",", 1)[-1] for v in msg.get_all("Project-URL") or []]
+              for url in urls:
+                  if not allowed(url.strip()):
+                      errors.append(f"link outside the allowlist in {where}: {url.strip()!r}")
+              ctype = msg.get("Description-Content-Type", "")
+              if ctype.split(";")[0].strip().lower() != "text/markdown":
+                  errors.append(f"{where}: the description is not Markdown: {ctype!r}")
+                  return
+              variant = msg.get_param("variant", "GFM", header="Description-Content-Type")
+              for i, text in enumerate([msg.get_payload()] + (msg.get_all("Description") or [])):
+                  rendered_links(f"{where} description {i}", text, variant)
+
+
+          # Files no page renders are scanned as text for anything that looks like a link.
+          TEXT_URL = re.compile(r"https?://[^\s<>\"'`)\]]+", re.I)
+
+
+          def text_links(where, data):
+              for link in TEXT_URL.findall(data.decode("utf-8", "replace")):
+                  if not allowed(link):
+                      errors.append(f"link outside the allowlist in {where}: {link!r}")
+
+
+          def check(where, name, data):
+              if name.endswith((".dist-info/METADATA", "/PKG-INFO")):
+                  metadata_links(where, data)
+              elif name.endswith(".md"):
+                  rendered_links(where, data.decode("utf-8"))
+              else:
+                  text_links(where, data)
+
+
+          # Controls: the plain links our files use pass, and lookalikes fail.
           for good in ("https://x.com/SAIHMemory", "https://github.com/sponsors/SAIHM-Admin",
                        "https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1",
-                       "https://github.com/SAIHM-Admin/saihm-adapters", "https://img.shields.io/pypi/v/x.svg",
-                       "https://pypi.org/project/saihm-adapters/", "https://pypi.org/project/mcp/",
-                       "https://saihm.net.", "HTTPS://saihm.net/"):
+                       "https://github.com/SAIHM-Admin/saihm-adapters#how-it-works", "https://img.shields.io/pypi/v/x.svg",
+                       "https://pypi.org/project/saihm-adapters/", "https://pypi.org/project/mcp/", "https://saihm.net",
+                       "http://www.apache.org/licenses/LICENSE-2.0", "#user-content-start-free"):
               assert allowed(good), f"allowlist rejects a real link: {good}"
+          for bad in ("https://x.com/SAIHMemoryFake", "https://github.com/sponsors/SAIHM-AdminX",
+                      "https://github.com/SAIHM-AdminX/repo", "https://www.youtube.com/@SAIHM-Memory-Fake",
+                      "https://img.shields.io/pypifake/x", "https://saihm.net.example.com/", "https://saihm.net./",
+                      "https://pypi.org/project/saihm-adapterz/", "https://someone@saihm.net/", "https://saihm.net:8443/"):
+              assert not allowed(bad), f"allowlist admits a lookalike: {bad}"
+          # Rendered controls, one per link form that has reached a browser past a check: rendered as
+          # PyPI renders it, each must give a link this check refuses.
+          for form, snippet in {
+              "tab before @host": '<a href="https://saihm.net\t@evil.example/">x</a>',
+              "newline before @host": '<a href="https://saihm.net\n@evil.example/">x</a>',
+              "space before @host": '<a href="https://saihm.net @evil.example/">x</a>',
+              "quote before @host": "<a href=\"https://saihm.net'@evil.example/\">x</a>",
+              "parenthesis before @host": '<a href="https://saihm.net)@evil.example/">x</a>',
+              "space in a <destination>": "[x](<https://saihm.net @evil.example/>)",
+              "tab between dots": '<a href="https://github.com/SAIHM-Admin/.\t./.\t./attacker/repo">x</a>',
+              "http: without slashes": "[x](http:evil.example/p)",
+              "upper-case scheme without slashes": '<a href="HTTP:evil.example/p">x</a>',
+              "upper-case scheme": "[x](HTTPS://evil.example/p)",
+              "https: and backslashes": '<a href="https:\\\\evil.example/p">x</a>',
+              "scheme-relative //host": "[x](//evil.example/p)",
+              "relative ../": "[x](../evil/)",
+              "root-relative /project/": "[x](/project/evil/)",
+              "https:/ and a path": "[x](https:/project/evil/)",
+              "&#46;&#46; segments": "[x](https://github.com/SAIHM-Admin/&#46;&#46;/attacker/repo)",
+              "&period;&period; in a reference": "[x][r]\n\n[r]: https://github.com/SAIHM-Admin/&period;&period;/attacker/repo",
+              "%2e%2e then punctuation": "see https://github.com/SAIHM-Admin/%2e%2e. now",
+              "a trailing /..": "[x](https://github.com/SAIHM-Admin/..)",
+              "a backslash": '<a href="https://github.com/SAIHM-Admin/x\\..\\..\\attacker/repo">x</a>',
+              "a percent-encoded backslash": "[x](https://github.com/SAIHM-Admin/x%5C..%5C..%5Cattacker/repo)",
+              "an image source": "![x](https://evil.example/x.png)",
+          }.items():
+              before = len(errors)
+              rendered_links(f"control {form}", snippet)
+              assert len(errors) > before, f"the check misses a link form: {form}"
+              del errors[before:]
+          # The same through check(): the URL fields and description of METADATA, and a Markdown file,
+          # are rendered before their links are read, and a description that is not Markdown fails.
+          HEAD = "Metadata-Version: 2.4\nName: x\nVersion: 1\n"
+          for name, data in {
+              "x.dist-info/METADATA": f"{HEAD}Description-Content-Type: text/markdown\n\n[x](//evil.example/p)\n",
+              "x/PKG-INFO": f"{HEAD}Project-URL: Source, https://evil.example/\nDescription-Content-Type: text/markdown\n\nok\n",
+              "y/PKG-INFO": f"{HEAD}Home-page: https://evil.example/\nDescription-Content-Type: text/markdown\n\nok\n",
+              "z/PKG-INFO": f"{HEAD}Description-Content-Type: text/x-rst\n\nok\n",
+              "v/PKG-INFO": f"{HEAD}Description-Content-Type: text/markdown; variant=Other\n\nok\n",
+              "d/PKG-INFO": f"{HEAD}Description: [x](//evil.example/p)\nDescription-Content-Type: text/markdown\n\nok\n",
+              "x/README.md": "[x](//evil.example/p)\n",
+          }.items():
+              before = len(errors)
+              check(f"control {name}", name, data.encode())
+              assert len(errors) == before + 1, f"the check misses a link in {name}: {errors[before:]}"
+              del errors[before:]
+          rendered_links("control allowed", "[a](https://saihm.net/pricing) <https://github.com/SAIHM-Admin/saihm-adapters>\n"
+                         "https://x.com/SAIHMemory ![b](https://img.shields.io/pypi/v/saihm-adapters.svg) [c](#start-free)")
+          text_links("control allowed text", b'Homepage = "https://saihm.net"\nhttp://www.apache.org/licenses/LICENSE-2.0\n')
+          assert errors == [], errors
+          text_links("control text", b"see HTTPS://evil.example/x and https://github.com/SAIHM-Admin/..")
+          assert len(errors) == 2, errors
+          errors.clear()
+
           dist = sorted(pathlib.Path("dist").iterdir())
           wheels = [p for p in dist if p.suffix == ".whl"]
           sdists = [p for p in dist if p.name.endswith(".tar.gz")]
           assert len(wheels) == 1 and len(sdists) == 1, dist
-          # The scheme is matched in any case, as a browser does (HTTPS://...).
-          url = re.compile(rb"https?://[^\s<>\"')\]`]+", re.I)
-          assert url.findall(b"see HTTPS://evil.example/x") == [b"HTTPS://evil.example/x"], "the link scan misses an upper-case scheme"
-          errors = []
-
-          def check_links(where, data):
-              for raw in url.findall(data):
-                  link = raw.decode("utf-8", "replace")
-                  if not allowed(link):
-                      errors.append(f"link outside the allowlist in {where}: {link}")
-
           with zipfile.ZipFile(wheels[0]) as z:
               names = z.namelist()
               code = [n for n in names if ".dist-info/" not in n]
@@ -111,11 +213,11 @@ jobs:
               if not re.search(rb"^Requires-Dist: saihm-adapters\[", meta, re.M):
                   errors.append("wheel METADATA does not require saihm-adapters")
               for n in names:
-                  check_links(f"wheel {n}", z.read(n))
+                  check(f"wheel {n}", n, z.read(n))
           with tarfile.open(sdists[0]) as t:
               for m in t.getmembers():
                   if m.isfile():
-                      check_links(f"sdist {m.name}", t.extractfile(m).read())
+                      check(f"sdist {m.name}", m.name, t.extractfile(m).read())
           print("\n".join(errors) or "ok: forwarder metadata and contents")
           sys.exit(1 if errors else 0)
           PY

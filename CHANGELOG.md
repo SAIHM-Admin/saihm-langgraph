@@ -11,6 +11,9 @@
   what it costs (with the [pricing page](https://saihm.net/pricing)) and support. It now
   shows a runnable LangGraph graph (`graph.compile(store=SaihmStore())`).
 - Package links add Issues and Changelog.
+- If pip reports conflicting dependencies with an `mcp` older than 1.21.1, upgrade `mcp` to
+  1.21.1 or later. Until you can, `saihm-adapters[langgraph]==0.1.1` still installs in place
+  of this package; it lacks the fixes above.
 
 ## 0.1.3
 
