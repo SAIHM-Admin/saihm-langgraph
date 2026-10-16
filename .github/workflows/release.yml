@@ -282,7 +282,7 @@ jobs:
           with tarfile.open(sdists[0]) as t:
               members = sum(m.isfile() for m in t.getmembers())
           if files != len(names) + members or len(checked) != files:
-              errors.append(f"the walk checked {len(checked)} files of {len(names) + members}")
+              errors.append(f"the walk counted {files} files and checked {len(checked)}; the wheel and sdist hold {len(names) + members}")
           print("\n".join(errors) or "ok: forwarder metadata and contents")
           sys.exit(1 if errors else 0)
           PY
