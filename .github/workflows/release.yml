@@ -66,16 +66,25 @@ jobs:
               "www.apache.org": ("/licenses",),
           }
 
-          def allowed(url):
-              # The authority as written may hold no backslash and no "@" (a browser and urlsplit
-              # can then disagree on the host), and no path segment may be "." or "..", also
-              # percent-encoded.
-              authority = url.split("://", 1)[-1].split("/", 1)[0]
-              if "\\" in authority or "@" in authority:
+          def allowed(link):
+              # link is a URL as written in a file; a trailing ".", ",", ";" or ":" is read as
+              # punctuation. A backslash anywhere fails, also percent-encoded: a browser reads it
+              # as "/", so it can hide a dot segment or change the host.
+              if "\\" in unquote(link):
+                  return False
+              url = link.rstrip(".,;:")
+              # The authority as written may hold no "@" (a browser and urlsplit can then disagree
+              # on the host).
+              if "@" in url.split("://", 1)[-1].split("/", 1)[0]:
                   return False
               u = urlsplit(url)
               path = u.path or "/"
-              if any(unquote(s) in (".", "..") for s in path.split("/")):
+              # No path segment may be "..", also percent-encoded, including one at the end of
+              # the link as written (a link that ends in "/.." before the punctuation cut), and
+              # no segment may be ".".
+              if any(unquote(s) == ".." for s in urlsplit(link).path.split("/")):
+                  return False
+              if any(unquote(s) == "." for s in path.split("/")):
                   return False
               return any(path == p or path.startswith(p + "/") for p in ALLOWED.get(u.hostname or "", ()))
 
@@ -88,23 +97,29 @@ jobs:
                       "https://www.youtube.com/@SAIHM-Memory/../@other", "https://img.shields.io/badge/../../evil",
                       "https://x.com/SAIHMemory/%2e%2e/elonmusk", "https://evil.example\\@saihm.net/",
                       "https://someone@saihm.net/", "https://pypi.org/project/saihm-adapterz/",
-                      "https://pypi.org/project/evil/"):
+                      "https://pypi.org/project/evil/", "https://github.com:\\attacker/SAIHM-Admin",
+                      "https://x.com/SAIHMemory/..\\elonmusk", "https://github.com/SAIHM-Admin/x\\..\\..\\evil/repo",
+                      "https://github.com/SAIHM-Admin/x%5C..%5C..%5Cevil/repo", "https://github.com/SAIHM-Admin/..",
+                      "https://github.com/SAIHM-Admin/./evil", "https://github.com/SAIHM-Admin/%2e/evil"):
               assert not allowed(bad), f"allowlist admits a lookalike: {bad}"
           for good in ("https://x.com/SAIHMemory", "https://github.com/sponsors/SAIHM-Admin",
                        "https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1",
                        "https://github.com/SAIHM-Admin/saihm-adapters", "https://img.shields.io/pypi/v/x.svg",
-                       "https://pypi.org/project/saihm-adapters/", "https://pypi.org/project/mcp/"):
+                       "https://pypi.org/project/saihm-adapters/", "https://pypi.org/project/mcp/",
+                       "https://saihm.net.", "HTTPS://saihm.net/"):
               assert allowed(good), f"allowlist rejects a real link: {good}"
           dist = sorted(pathlib.Path("dist").iterdir())
           wheels = [p for p in dist if p.suffix == ".whl"]
           sdists = [p for p in dist if p.name.endswith(".tar.gz")]
           assert len(wheels) == 1 and len(sdists) == 1, dist
-          url = re.compile(rb"https?://[^\s<>\"')\]`]+")
+          # The scheme is matched in any case, as a browser does (HTTPS://...).
+          url = re.compile(rb"https?://[^\s<>\"')\]`]+", re.I)
+          assert url.findall(b"see HTTPS://evil.example/x") == [b"HTTPS://evil.example/x"], "the link scan misses an upper-case scheme"
           errors = []
 
           def check_links(where, data):
               for raw in url.findall(data):
-                  link = raw.decode("utf-8", "replace").rstrip(".,;:")
+                  link = raw.decode("utf-8", "replace")
                   if not allowed(link):
                       errors.append(f"link outside the allowlist in {where}: {link}")
 
@@ -156,5 +171,5 @@ jobs:
           path: dist/
 
       # Trusted publishing: the token is exchanged for a short-lived PyPI credential
-      # scoped to this repository and workflow. No API token is stored anywhere.
+      # scoped to this repository and workflow. This workflow stores no API token.
       - uses: pypa/gh-action-pypi-publish@release/v1
