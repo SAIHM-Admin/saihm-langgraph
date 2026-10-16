@@ -31,7 +31,7 @@ jobs:
         run: |
           python - <<'PY'
           import pathlib, re, sys, tarfile, zipfile
-          from urllib.parse import urlsplit
+          from urllib.parse import unquote, urlsplit
           # A path is allowed when it equals an entry or continues it after a "/", so lookalikes
           # such as x.com/SAIHMemoryFake fail ("" admits the whole host).
           ALLOWED = {
@@ -41,24 +41,39 @@ jobs:
               "img.shields.io": ("/pypi", "/badge"),
               "x.com": ("/SAIHMemory",),
               "www.youtube.com": ("/@SAIHM-Memory",),
-              "pypi.org": ("",),
+              "pypi.org": ("/project/saihm-adapters", "/project/saihm-langgraph", "/project/saihm-crewai", "/project/mcp"),
               "www.apache.org": ("/licenses",),
           }
 
-          def allowed(u):
+          def allowed(url):
+              # The authority as written may hold no backslash and no "@" (a browser and urlsplit
+              # can then disagree on the host), and no path segment may be "." or "..", also
+              # percent-encoded.
+              authority = url.split("://", 1)[-1].split("/", 1)[0]
+              if "\\" in authority or "@" in authority:
+                  return False
+              u = urlsplit(url)
               path = u.path or "/"
+              if any(unquote(s) in (".", "..") for s in path.split("/")):
+                  return False
               return any(path == p or path.startswith(p + "/") for p in ALLOWED.get(u.hostname or "", ()))
 
           # Negative and positive controls: the check must reject lookalikes and admit the real links.
           for bad in ("https://x.com/SAIHMemoryFake", "https://x.com/elonmusk",
                       "https://github.com/sponsors/SAIHM-AdminX", "https://github.com/sponsors/SAIHM-Admin-evil",
                       "https://github.com/SAIHM-AdminX/repo", "https://www.youtube.com/@SAIHM-Memory-Fake",
-                      "https://img.shields.io/pypifake/x", "https://saihm.net.example.com/"):
-              assert not allowed(urlsplit(bad)), f"allowlist admits a lookalike: {bad}"
+                      "https://img.shields.io/pypifake/x", "https://saihm.net.example.com/",
+                      "https://github.com/SAIHM-Admin/../evil/repo", "https://x.com/SAIHMemory/../elonmusk",
+                      "https://www.youtube.com/@SAIHM-Memory/../@other", "https://img.shields.io/badge/../../evil",
+                      "https://x.com/SAIHMemory/%2e%2e/elonmusk", "https://evil.example\\@saihm.net/",
+                      "https://someone@saihm.net/", "https://pypi.org/project/saihm-adapterz/",
+                      "https://pypi.org/project/evil/"):
+              assert not allowed(bad), f"allowlist admits a lookalike: {bad}"
           for good in ("https://x.com/SAIHMemory", "https://github.com/sponsors/SAIHM-Admin",
                        "https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1",
-                       "https://github.com/SAIHM-Admin/saihm-adapters", "https://img.shields.io/pypi/v/x.svg"):
-              assert allowed(urlsplit(good)), f"allowlist rejects a real link: {good}"
+                       "https://github.com/SAIHM-Admin/saihm-adapters", "https://img.shields.io/pypi/v/x.svg",
+                       "https://pypi.org/project/saihm-adapters/", "https://pypi.org/project/mcp/"):
+              assert allowed(good), f"allowlist rejects a real link: {good}"
           dist = sorted(pathlib.Path("dist").iterdir())
           wheels = [p for p in dist if p.suffix == ".whl"]
           sdists = [p for p in dist if p.name.endswith(".tar.gz")]
@@ -68,9 +83,9 @@ jobs:
 
           def check_links(where, data):
               for raw in url.findall(data):
-                  u = urlsplit(raw.decode("utf-8", "replace").rstrip(".,;:"))
-                  if not allowed(u):
-                      errors.append(f"link outside the allowlist in {where}: {u.geturl()}")
+                  link = raw.decode("utf-8", "replace").rstrip(".,;:")
+                  if not allowed(link):
+                      errors.append(f"link outside the allowlist in {where}: {link}")
 
           with zipfile.ZipFile(wheels[0]) as z:
               names = z.namelist()
