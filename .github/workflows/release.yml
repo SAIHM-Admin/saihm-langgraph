@@ -41,7 +41,7 @@ jobs:
           [ "$code" = "404" ] || { echo "::error::$name $ver already exists on PyPI (HTTP $code)"; exit 1; }
 
       - name: Build sdist and wheel
-        run: python -m pip install --upgrade pip build twine "readme-renderer[md]==46.0" && python -m build
+        run: python -m pip install --upgrade pip build twine "readme-renderer[md]==46.0" "comrak==0.0.16" "nh3==0.3.7" && python -m build
 
       - name: Check the artifacts render on PyPI
         run: python -m twine check --strict dist/*
@@ -51,10 +51,11 @@ jobs:
         # files say so, depend on saihm-adapters, and link only to the hosts listed here.
         run: |
           python - <<'PY'
-          import email, pathlib, re, sys, tarfile, zipfile
+          import email, io, pathlib, re, sys, tarfile, tempfile, zipfile
           from html.parser import HTMLParser
           from urllib.parse import unquote
-          # The renderer PyPI uses for a Markdown description; the build step pins its version.
+          # The renderer PyPI uses for a Markdown description; the build step pins it, comrak and nh3 to
+          # the versions PyPI runs.
           import readme_renderer.markdown
 
           # A path is allowed when it equals an entry or continues it after a "/", so lookalikes
@@ -133,7 +134,10 @@ jobs:
                   return
               variant = msg.get_param("variant", "GFM", header="Description-Content-Type")
               for i, text in enumerate([msg.get_payload()] + (msg.get_all("Description") or [])):
-                  rendered_links(f"{where} description {i}", text, variant)
+                  # PyPI renders every Markdown description as GFM, whatever variant it declares. Read the
+                  # links as GFM, and in the declared variant too, which must also render.
+                  for v in dict.fromkeys(("GFM", variant)):
+                      rendered_links(f"{where} description {i} {v}", text, v)
 
 
           # Files no page renders are scanned as text for anything that looks like a link.
@@ -153,6 +157,21 @@ jobs:
                   rendered_links(where, data.decode("utf-8"))
               else:
                   text_links(where, data)
+
+
+          def walk(wheel, sdist):
+              # Every file in the wheel and every file in the sdist goes through check(). Returns how many.
+              files = 0
+              with zipfile.ZipFile(wheel) as z:
+                  for n in z.namelist():
+                      check(f"wheel {n}", n, z.read(n))
+                      files += 1
+              with tarfile.open(sdist) as t:
+                  for m in t.getmembers():
+                      if m.isfile():
+                          check(f"sdist {m.name}", m.name, t.extractfile(m).read())
+                          files += 1
+              return files
 
 
           # Controls: the plain links our files use pass, and lookalikes fail.
@@ -208,17 +227,38 @@ jobs:
               "v/PKG-INFO": f"{HEAD}Description-Content-Type: text/markdown; variant=Other\n\nok\n",
               "d/PKG-INFO": f"{HEAD}Description: [x](//evil.example/p)\nDescription-Content-Type: text/markdown\n\nok\n",
               "x/README.md": "[x](//evil.example/p)\n",
+              "w/NOTES.md": "Docs: www.evil.example/start\n",
+              "c/PKG-INFO": f"{HEAD}Description-Content-Type: text/markdown; variant=CommonMark\n\nDocs: www.evil.example/start\n",
           }.items():
               before = len(errors)
               check(f"control {name}", name, data.encode())
               assert len(errors) == before + 1, f"the check misses a link in {name}: {errors[before:]}"
               del errors[before:]
+          before = len(errors)
+          check("control variant", "r/PKG-INFO", (f"{HEAD}Description-Content-Type: text/markdown; variant=CommonMark\n\n"
+                "Docs: www.evil.example/start\n\n<xmp><a href=\"&#104;ttps://evil.example/p\">x</a></xmp>\n").encode())
+          assert len(errors) == before + 2, f"the check misses a link PyPI shows: {errors[before:]}"
+          del errors[before:]
           rendered_links("control allowed", "[a](https://saihm.net/pricing) <https://github.com/SAIHM-Admin/saihm-adapters>\n"
                          "https://x.com/SAIHMemory ![b](https://img.shields.io/pypi/v/saihm-adapters.svg) [c](#start-free)")
           text_links("control allowed text", b'Homepage = "https://saihm.net"\nhttp://www.apache.org/licenses/LICENSE-2.0\n')
           assert errors == [], errors
-          text_links("control text", b"see HTTPS://evil.example/x and https://github.com/SAIHM-Admin/..")
-          assert len(errors) == 2, errors
+          text_links("control text", b"see HTTPS://evil.example/x, http://evil.example/t and https://github.com/SAIHM-Admin/..")
+          assert len(errors) == 3, errors
+          errors.clear()
+          # NIT-1 (K26, K27): the walk reads every member of both files; one bad link in each gives two errors.
+          with tempfile.TemporaryDirectory() as tmp:
+              wheel, sdist = pathlib.Path(tmp, "c-1-py3-none-any.whl"), pathlib.Path(tmp, "c-1.tar.gz")
+              with zipfile.ZipFile(wheel, "w") as z:
+                  z.writestr("c-1.dist-info/RECORD", "")
+                  z.writestr("c-1.dist-info/notes.txt", "see https://evil.example/w")
+              with tarfile.open(sdist, "w:gz") as t:
+                  for name, data in (("c-1/setup.cfg", b""), ("c-1/notes.txt", b"see https://evil.example/s")):
+                      info = tarfile.TarInfo(name)
+                      info.size = len(data)
+                      t.addfile(info, io.BytesIO(data))
+              files = walk(wheel, sdist)
+          assert len(errors) == 2 and files == 4, f"the walk misses a member: {files} files, {errors}"
           errors.clear()
 
           dist = sorted(pathlib.Path("dist").iterdir())
@@ -233,12 +273,11 @@ jobs:
               meta = next(z.read(n) for n in names if n.endswith(".dist-info/METADATA"))
               if not re.search(rb"^Requires-Dist: saihm-adapters\[", meta, re.M):
                   errors.append("wheel METADATA does not require saihm-adapters")
-              for n in names:
-                  check(f"wheel {n}", n, z.read(n))
+          files = walk(wheels[0], sdists[0])
           with tarfile.open(sdists[0]) as t:
-              for m in t.getmembers():
-                  if m.isfile():
-                      check(f"sdist {m.name}", m.name, t.extractfile(m).read())
+              members = sum(m.isfile() for m in t.getmembers())
+          if files != len(names) + members:
+              errors.append(f"the walk checked {files} files of {len(names) + members}")
           print("\n".join(errors) or "ok: forwarder metadata and contents")
           sys.exit(1 if errors else 0)
           PY

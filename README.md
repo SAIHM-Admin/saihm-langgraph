@@ -21,10 +21,12 @@ can be erased for good.
 **Encrypted at rest, by default.** Every memory is encrypted on your own machine before it
 goes anywhere, and SAIHM stores only that ciphertext. Nobody else can read your memories —
 not the storage, not SAIHM. With your key in a key file, Python never reads the key. With
-the default free-join key file, the client also keeps a local copy of your memories, not
-encrypted and readable only by your user account, so recall is fast. Setting
-`SAIHM_RECALL_CACHE=0` stops new copies. A copy written earlier stays, and `forget` no
-longer updates it, so delete `~/.saihm/recall.*.json` to remove it
+the default free-join key file, the client also keeps a local copy of your memories, so
+recall is fast. That copy is not encrypted, and only your user account can read it. Setting
+`SAIHM_RECALL_CACHE=0` in every app that uses this key, MCP hosts included, stops new
+copies. A copy written earlier stays, and `SaihmStore.delete` no longer updates it. To remove
+it, delete the `recall.*` files beside your key file
+(`~/.saihm/recall.*`, or in `SAIHM_HOME`; a `SAIHM_RECALL_CACHE_PATH` file too)
 ([details](https://github.com/SAIHM-Admin/saihm-adapters#how-it-works)).
 
 ## Start free — one command

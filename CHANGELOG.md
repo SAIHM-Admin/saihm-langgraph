@@ -11,9 +11,15 @@
   what it costs (with the [pricing page](https://saihm.net/pricing)) and support. It now
   shows a runnable LangGraph graph (`graph.compile(store=SaihmStore())`).
 - Package links add Issues and Changelog.
+- With the default free-join key file, `saihm-adapters` 0.1.2 and later keep a local copy of
+  your memories beside your key file, so recall is fast. That copy is not encrypted, and only
+  your user account can read it. Setting `SAIHM_RECALL_CACHE=0` stops new copies and leaves
+  the existing one in place. To remove it, delete the `recall.*` files beside your key file
+  (`~/.saihm/recall.*`, or in `SAIHM_HOME`; a `SAIHM_RECALL_CACHE_PATH` file too). The
+  README now says this.
 - If pip reports conflicting dependencies with an `mcp` older than 1.21.1, upgrade `mcp` to
   1.21.1 or later. Until you can, `saihm-adapters[langgraph]==0.1.1` still installs in place
-  of this package; it lacks the fixes above.
+  of this package. It lacks the fixes above, so move to this release when you upgrade `mcp`.
 
 ## 0.1.3
 
