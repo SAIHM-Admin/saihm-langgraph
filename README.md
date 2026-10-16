@@ -25,8 +25,8 @@ the default free-join key file, the client also keeps a local copy of your memor
 recall is fast. That copy is not encrypted, and only your user account can read it. Setting
 `SAIHM_RECALL_CACHE=0` in every app that uses this key, MCP hosts included, stops new
 copies. A copy written earlier stays, and `SaihmStore.delete` no longer updates it. To remove
-it, delete the `recall.*` files beside your key file
-(`~/.saihm/recall.*`, or in `SAIHM_HOME`; a `SAIHM_RECALL_CACHE_PATH` file too)
+it, delete `~/.saihm/recall.*`, or `recall.*` in `SAIHM_HOME` if you set it; with
+`SAIHM_RECALL_CACHE_PATH`, delete that file and its `.lock` and `.tmp.*` files too
 ([details](https://github.com/SAIHM-Admin/saihm-adapters#how-it-works)).
 
 ## Start free — one command

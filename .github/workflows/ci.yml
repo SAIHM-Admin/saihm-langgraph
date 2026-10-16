@@ -129,7 +129,11 @@ jobs:
                       errors.append(f"link outside the allowlist in {where}: {link!r}")
 
 
+          checked = []
+
+
           def check(where, name, data):
+              checked.append(where)
               if name.endswith((".dist-info/METADATA", "/PKG-INFO")):
                   metadata_links(where, data)
               elif name.endswith(".md"):
@@ -252,11 +256,12 @@ jobs:
               meta = next(z.read(n) for n in names if n.endswith(".dist-info/METADATA"))
               if not re.search(rb"^Requires-Dist: saihm-adapters\[", meta, re.M):
                   errors.append("wheel METADATA does not require saihm-adapters")
+          checked.clear()
           files = walk(wheels[0], sdists[0])
           with tarfile.open(sdists[0]) as t:
               members = sum(m.isfile() for m in t.getmembers())
-          if files != len(names) + members:
-              errors.append(f"the walk checked {files} files of {len(names) + members}")
+          if files != len(names) + members or len(checked) != files:
+              errors.append(f"the walk checked {len(checked)} files of {len(names) + members}")
           print("\n".join(errors) or "ok: forwarder metadata and contents")
           sys.exit(1 if errors else 0)
           PY
