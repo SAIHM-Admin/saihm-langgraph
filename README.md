@@ -4,6 +4,13 @@
 encrypted on your machine, follow your user across models and frameworks, and can be
 erased for good.
 
+[![PyPI version](https://img.shields.io/pypi/v/saihm-langgraph.svg)](https://pypi.org/project/saihm-langgraph/)
+[![license](https://img.shields.io/pypi/l/saihm-langgraph.svg)](https://github.com/SAIHM-Admin/saihm-langgraph/blob/main/LICENSE)
+[![Star on GitHub](https://img.shields.io/badge/GitHub-Star-181717?logo=github&logoColor=white)](https://github.com/SAIHM-Admin/saihm-adapters)
+[![Sponsor SAIHM](https://img.shields.io/badge/Sponsor-SAIHM-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/SAIHM-Admin)
+[![Subscribe on YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1)
+[![Follow on X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/SAIHMemory)
+
 **`saihm-langgraph` is now the LangGraph adapter inside the consolidated
 [`saihm-adapters`](https://pypi.org/project/saihm-adapters/) package.** Installing it pulls
 `saihm-adapters[langgraph]`. This package ships no code of its own.
@@ -13,7 +20,11 @@ erased for good.
 
 **Encrypted at rest, by default.** Every memory is encrypted on your own machine before it
 goes anywhere, and SAIHM stores only that ciphertext. Nobody else can read your memories —
-not the storage, not SAIHM. With your key in a key file, Python never reads the key.
+not the storage, not SAIHM. With your key in a key file, Python never reads the key. With
+the default free-join key file, the client also keeps a local copy of the memories this
+device has opened, readable only by your user account, so recall is fast; set
+`SAIHM_RECALL_CACHE=0` to keep none
+([details](https://github.com/SAIHM-Admin/saihm-adapters#how-it-works)).
 
 ## Start free — one command
 
@@ -97,7 +108,7 @@ from saihm_adapters import SaihmStore          # was: from saihm_memory import S
 from saihm_adapters import SaihmMemoryClient, Memory, SaihmTimeout, SaihmNoIdentityError
 ```
 
-This is a clean break: after upgrading, `import saihm_memory` will fail with `ModuleNotFoundError`. That is intentional: the old import root is gone, so the one change to make is obvious.
+After upgrading, `import saihm_memory` fails with `ModuleNotFoundError`, which marks the one line to change.
 
 ## What it costs
 
@@ -112,6 +123,11 @@ and every memory you already have.
 - **Star it on [GitHub](https://github.com/SAIHM-Admin/saihm-adapters).** Stars help other
   developers find SAIHM.
 - **Share it** with a colleague, your team, or anyone whose agents keep forgetting.
+- **Follow [@SAIHMemory on X](https://x.com/SAIHMemory)** for news and updates.
+- **Sponsor it** through [GitHub Sponsors](https://github.com/sponsors/SAIHM-Admin), monthly or one-time.
+- **Follow along on YouTube:** like the videos,
+  [subscribe to the channel](https://www.youtube.com/@SAIHM-Memory?sub_confirmation=1), and turn on notifications
+  with the bell 🔔 for new videos and updates.
 - **Questions or problems?** See [contact and support](https://saihm.net/contact).
 
 More: the [consolidated package](https://pypi.org/project/saihm-adapters/), its

@@ -35,7 +35,10 @@ jobs:
           ALLOWED = {
               "saihm.net": "/",
               "saihm-admin.github.io": "/",
-              "github.com": "/SAIHM-Admin/",
+              "github.com": ("/SAIHM-Admin/", "/sponsors/SAIHM-Admin"),
+              "img.shields.io": ("/pypi/", "/badge/"),
+              "x.com": "/SAIHMemory",
+              "www.youtube.com": "/@SAIHM-Memory",
               "pypi.org": "/",
               "www.apache.org": "/licenses/",
           }
